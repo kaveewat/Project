@@ -3,6 +3,7 @@ const express = require("express");
 const mongoose = require("mongoose");
 const bodyParser = require("body-parser");
 const dotenv = require("dotenv");
+const cors = require("cors"); // <-- เพิ่มตรงนี้
 
 dotenv.config();
 
@@ -11,6 +12,7 @@ const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(bodyParser.json());
+app.use(cors()); // <-- เพิ่มตรงนี้เพื่ออนุญาตทุก origin
 
 // MongoDB connection
 mongoose
@@ -106,8 +108,6 @@ app.delete("/songs/:id", async (req, res) => {
 });
 
 // -------- Favorites Routes --------
-
-// GET all favorites
 app.get("/favorites", async (req, res) => {
   const favorites = await Favorite.find();
   const result = await Promise.all(
@@ -125,7 +125,6 @@ app.get("/favorites", async (req, res) => {
   res.json({ message: "Favorites fetched successfully", data: result });
 });
 
-// GET favorite by id
 app.get("/favorites/:id", async (req, res) => {
   const fav = await Favorite.findOne({ _id: req.params.id });
   if (!fav) return res.status(404).json({ message: "Favorite not found", data: null });
@@ -144,21 +143,18 @@ app.get("/favorites/:id", async (req, res) => {
   });
 });
 
-// POST new favorite
 app.post("/favorites", async (req, res) => {
   const newFav = new Favorite(req.body);
   await newFav.save();
   res.json({ message: "Favorite created successfully", data: newFav });
 });
 
-// PUT update favorite
 app.put("/favorites/:id", async (req, res) => {
   const updatedFavorite = await Favorite.findOneAndUpdate({ _id: req.params.id }, req.body, { new: true });
   if (!updatedFavorite) return res.status(404).json({ message: "Favorite not found", data: null });
   res.json({ message: "Favorite updated successfully", data: updatedFavorite });
 });
 
-// DELETE favorite
 app.delete("/favorites/:id", async (req, res) => {
   const deletedFavorite = await Favorite.findOneAndDelete({ _id: req.params.id });
   if (!deletedFavorite) return res.status(404).json({ message: "Favorite not found", data: null });

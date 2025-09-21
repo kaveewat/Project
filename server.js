@@ -1,51 +1,93 @@
 // server.js
 const express = require("express");
 const mongoose = require("mongoose");
-const bodyParser = require("body-parser");
-const dotenv = require("dotenv");
-const cors = require("cors"); // <-- เพิ่มตรงนี้
-
-dotenv.config();
+const cors = require("cors");
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = 5001;
+const JWT_SECRET = 'your-secret-key-here'; // ในโปรดักชันควรเก็บใน .env
 
 // Middleware
-app.use(bodyParser.json());
-app.use(cors()); // <-- เพิ่มตรงนี้เพื่ออนุญาตทุก origin
+app.use(express.json());
+app.use(cors());
+
+// Verify Token Middleware
+const verifyToken = (req, res, next) => {
+  const token = req.headers['authorization']?.split(' ')[1];
+  
+  if (!token) {
+    return res.status(401).json({ message: 'No token provided' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (err) {
+    return res.status(401).json({ message: 'Invalid token' });
+  }
+};
 
 // MongoDB connection
 mongoose
-  .connect("mongodb://localhost:27017/favorites_song_db", {
+  .connect("mongodb://localhost:27017/song_app_db", {
     useNewUrlParser: true,
     useUnifiedTopology: true,
   })
   .then(() => console.log("Connected to MongoDB"))
   .catch((err) => console.error("MongoDB connection error:", err));
 
-// Models
-const userSchema = new mongoose.Schema({
-  _id: String,
-  username: String,
-  password: String,
-});
-const User = mongoose.model("User", userSchema);
+// Import Routes
+const authRoutes = require('./routes/auth');
 
-const songSchema = new mongoose.Schema({
-  _id: String,
-  title: String,
-  artist: String,
-  year: Number,
-});
-const Song = mongoose.model("Song", songSchema);
+// Mount auth routes under /auth
+app.use('/auth', authRoutes);
 
-const favoriteSchema = new mongoose.Schema({
-  _id: String,
-  userId: String,
-  songId: String,
-  note: String,
+// Import Models
+const User = require('./models/user');
+const Song = require('./models/song');
+const Favorite = require('./models/favorite');
+
+// Login Route
+app.post('/api/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    // Check if user exists
+    const user = await User.findOne({ username });
+    if (!user) {
+      return res.status(401).json({ message: 'Invalid username or password' });
+    }
+
+    // Verify password
+    const isValid = await user.comparePassword(password);
+    if (!isValid) {
+      return res.status(401).json({ message: 'Invalid username or password' });
+    }
+
+    // Generate token
+    const token = jwt.sign(
+      { userId: user._id, username: user.username, email: user.email },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    res.json({
+      message: 'Login successful',
+      token,
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email
+      }
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
 });
-const Favorite = mongoose.model("Favorite", favoriteSchema);
 
 // -------- Users Routes --------
 app.get("/users", async (req, res) => {
@@ -78,9 +120,13 @@ app.delete("/users/:id", async (req, res) => {
 });
 
 // -------- Songs Routes --------
-app.get("/songs", async (req, res) => {
-  const songs = await Song.find();
-  res.json({ message: "Songs fetched successfully", data: songs });
+app.get("/songs", verifyToken, async (req, res) => {
+  try {
+    const songs = await Song.find();
+    res.json({ message: "Songs fetched successfully", data: songs });
+  } catch (error) {
+    res.status(500).json({ message: "Error fetching songs" });
+  }
 });
 
 app.get("/songs/:id", async (req, res) => {
